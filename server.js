@@ -83,8 +83,7 @@ function buildMentionSentence(reviewers) {
 
 function defaultMessageGenerator(reviewers) {
   return util.format(
-    'By analyzing the blame information on this pull request' +
-     ', we identified %s to be%s potential reviewer%s',
+    'Using `git blame`, identified %s to be%s potential reviewer%s',
      buildMentionSentence(reviewers),
      reviewers.length > 1 ? '' : ' a',
      reviewers.length > 1 ? 's' : ''
