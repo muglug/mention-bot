@@ -23,6 +23,7 @@ var CONFIG_PATH = '.mention-bot';
 
 if (!process.env.GITHUB_DIR) {
   console.error('The bot was started without a github directory specified.');
+  process.exit(1);
 }
 
 if (!process.env.GITHUB_TOKEN) {
