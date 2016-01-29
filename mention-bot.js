@@ -162,7 +162,7 @@ function parseBlame(lines: Array<string>): Array<string> {
   
   lines.forEach(function(line) {
     if (line.substring(0, 11) === 'author-mail') {
-      author = line.substring(12).replace(/[\<\>]/g, '').replace('@vimeo.com', '');
+      author = line.substring(12).replace(/[\<\>]/g, '');
       
       if (authors.length === 0) {
         authors.push(author);
@@ -339,6 +339,34 @@ async function filterRequiredOrgs(
   });
 }
 
+async function replaceEmailWithUser(
+  email: string,
+  config: Object,
+  github: Object
+): Promise<string> {
+  return new Promise(function(resolve, reject) {
+    if (config.emailAliases && config.emailAliases[email]) {
+      resolve(config.emailAliases[email]);
+
+    } else if (config.gheEmailDomain && email.indexOf('@' + config.gheEmailDomain) > -1) {
+      resolve(email.replace('@' + config.gheEmailDomain, ''));
+
+    } else if (email.indexOf('@') > -1) {
+      github.search.email({'email': email}, function(error, result) {
+        if (error) {
+          resolve(email);
+        } else {
+          resolve(result.user.login);
+        }
+      });
+
+    }
+    else {
+      resolve(email);
+    }
+  });
+}
+
 /**
  * The problem at hand is to find a set of three best effort people that have
  * context on a pull request. It doesn't (and actually can't) be perfect.
@@ -402,6 +430,12 @@ async function guessOwners(
     owners = await filterRequiredOrgs(owners, config, github);
   }
 
+  var promises = owners.map(function(owner) {
+    return replaceEmailWithUser(owner, github);
+  });
+
+  owners = await Promise.all(promises);
+
   return owners
     .slice(0, config.maxReviewers)
     .concat(defaultOwners)
@@ -412,23 +446,28 @@ async function guessOwners(
 
 async function getDiff(
   repoURI: string,
-  id: int
+  id: int,
+  github: Object
 ) : Promise<Array<string>> {
   return new Promise(function(resolve, reject) {
     github.pullRequests.getFiles(
       {
-        'headers': {
-          'Accept': 'application/vnd.github.v3.diff'
-        },
+        'headers': [
+          'Accept: application/vnd.github.v3.diff'
+        ],
         'user': repoURI.split('/')[0],
         'repo': repoURI.split('/')[1],
         'number': id
       },
-      function(result) {
-        resolve(result);
+      function(err, result) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result.patch);
+        }
       }
     );
-  }
+  });
 }
 
 async function guessOwnersForPullRequest(
@@ -439,7 +478,10 @@ async function guessOwnersForPullRequest(
   config: Object,
   github: Object
 ): Promise<Array<string>> {
-  var diff = await getDiff(repoURI, id);
+  var diff = await fetch((config.gheProtocol || 'https') + config.gheHost + '/api/v3/repos/' + repoURI + '/pulls/' + id, [
+    'Accept: application/vnd.github.v3.diff',
+    'Authorization: token ' + process.env.GITHUB_TOKEN
+  ]);
   var files = parseDiff(diff);
   var defaultOwners = getDefaultOwners(files, config.alwaysNotifyForPaths);
 
