@@ -15,12 +15,17 @@ var githubAuthCookies = require('./githubAuthCookies');
 var fs = require('fs');
 var minimatch = require('minimatch');
 
-async function downloadFileAsync(url: string, cookies: ?string): Promise<string> {
+async function downloadFileAsync(url: string, cookies: ?string, headers: ?Array): Promise<string> {
   return new Promise(function(resolve, reject) {
     var args = ['--silent', '-L', url];
 
     if (cookies) {
       args.push('-H', `Cookie: ${cookies}`);
+    }
+    if (headers) {
+      headers.forEach(function (header) {
+        args.push('-H', header);
+      });
     }
 
     require('child_process')
@@ -148,43 +153,43 @@ function parseDiff(diff: string): Array<FileInfo> {
   return files;
 }
 
-/**
- * Sadly, github doesn't have an API to get line by line blame for a file.
- * We could git clone the repo and blame, but it's annoying to have to
- * maintain a local git repo and the blame is going to be name + email instead
- * of the github username, so we'll have to do a http request anyway.
- *
- * There are two main ways to extract information from an HTML file:
- *   - First is to work like a browser: parse the html, build a DOM tree and
- *     use a jQuery-like API to traverse the DOM and extract what you need.
- *     The big issue is that creating the DOM is --extremely-- slow.
- *   - Second is to use regex to analyze the outputted html and find whatever
- *     we want.
- *
- * I(vjeux)'ve scraped hundreds of websites using both techniques and both of
- * them have the same reliability when it comes to the website updating their
- * markup. If they change what you are extracting you are screwed and if they
- * change something around, both are resistant to it when written properly.
- * So, might as well use the fastest one of the two: regex :)
- */
-function parseBlame(blame: string): Array<string> {
-  // The way the document is structured is that commits and lines are
-  // interleaved. So every time we see a commit we grab the author's name
-  // and every time we see a line we log the last seen author.
-  var re = /(rel="(?:author|contributor)">([^<]+)<\/a> authored|<tr class="blame-line">)/g;
+function parseBlame(lines: Array<string>): Array<string> {
+  var lineNumber = 1;
+  var author;
+  var authors = [];
 
-  var currentAuthor = 'none';
-  var lines = [];
-  var match;
-  while (match = re.exec(blame)) {
-    if (match[2]) {
-      currentAuthor = match[2];
-    } else {
-      lines.push(currentAuthor);
+  console.log(lines);
+  
+  lines.forEach(function(line) {
+    if (line.substring(0, 11) === 'author-mail') {
+      author = line.substring(12).replace(/[\<\>]/g, '').replace('@vimeo.com', '');
+      
+      if (authors.length === 0) {
+        authors.push(author);
+      }
     }
-  }
+    else if (line.match(/^[0-9a-f]{40} /) && author) {
+      authors.push(author);
+    }
+  });
 
-  return lines;
+  return authors;
+}
+
+async function getBlame(path: string): Promise<string> {
+  return new Promise(function(resolve, reject) {
+    var cmd = 'git';
+    require('child_process')
+      .execFile(cmd, ['blame', '-p', path], {cwd: process.env.GITHUB_DIR, encoding: 'utf8', maxBuffer: 1000 * 1024}, function(error, stdout, stderr) {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(stdout.toString().split('\n').map(function(line) {
+            return line.replace(/^[0-9a-f]{8} \(<([^>]*)>.*$/, '$1');
+          }));
+        }
+      });
+  });
 }
 
 function getDeletedOwners(
@@ -279,9 +284,9 @@ function getDefaultOwners(
  * much slower, it's also going to temporary/permanently ban your ip and
  * you won't be able to get anymore work done when it happens :(
  */
-async function fetch(url: string): Promise<string> {
+async function fetch(url: string, headers): Promise<string> {
   if (!module.exports.enableCachingForDebugging) {
-    return downloadFileAsync(url, githubAuthCookies);
+    return downloadFileAsync(url, githubAuthCookies, headers);
   }
 
   var cacheDir = __dirname + '/cache/';
@@ -405,15 +410,36 @@ async function guessOwners(
     });
 }
 
+async function getDiff(
+  repoURI: string,
+  id: int
+) : Promise<Array<string>> {
+  return new Promise(function(resolve, reject) {
+    github.pullRequests.getFiles(
+      {
+        'headers': {
+          'Accept': 'application/vnd.github.v3.diff'
+        },
+        'user': repoURI.split('/')[0],
+        'repo': repoURI.split('/')[1],
+        'number': id
+      },
+      function(result) {
+        resolve(result);
+      }
+    );
+  }
+}
+
 async function guessOwnersForPullRequest(
-  repoURL: string,
+  repoURI: string,
   id: number,
   creator: string,
   targetBranch: string,
   config: Object,
   github: Object
 ): Promise<Array<string>> {
-  var diff = await fetch(repoURL + '/pull/' + id + '.diff');
+  var diff = await getDiff(repoURI, id);
   var files = parseDiff(diff);
   var defaultOwners = getDefaultOwners(files, config.alwaysNotifyForPaths);
 
@@ -442,7 +468,7 @@ async function guessOwnersForPullRequest(
   var blames = {};
   // create blame promises (allows concurrent loading)
   var promises = files.map(function(file) {
-    return fetch(repoURL + '/blame/' + targetBranch + '/' + file.path);
+    return getBlame(file.path);
   });
 
   // wait for all promises to resolve

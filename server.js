@@ -21,6 +21,10 @@ var GitHubApi = require('github');
 
 var CONFIG_PATH = '.mention-bot';
 
+if (!process.env.GITHUB_DIR) {
+  console.error('The bot was started without a github directory specified.');
+}
+
 if (!process.env.GITHUB_TOKEN) {
   console.error('The bot was started without a github account to post with.');
   console.error('To get started:');
@@ -152,7 +156,7 @@ async function work(body) {
   }
 
   var reviewers = await mentionBot.guessOwnersForPullRequest(
-    data.repository.html_url, // 'https://github.com/fbsamples/bot-testing'
+    data.repository.html_url.split('/').slice(3).join('/'), // 'fbsamples/bot-testing'
     data.pull_request.number, // 23
     data.pull_request.user.login, // 'mention-bot'
     data.pull_request.base.ref, // 'master'
