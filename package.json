@@ -16,13 +16,6 @@
     "unmockedModulePathPatterns": ["core-js/.*"]
   },
   "config": {
-    "gheHost": "github.vimeows.com",
-    "ghePathPrefix": "/api/v3",
-    "gheEmailDomain": "vimeo.com",
-    "emailAliases": {
-      "github@vimeo.com": "mattb",
-      "kevin@vimeo.com": "ksweeney"
-    }
   },
   "dependencies": {
     "babel-core": "^6.0.0",
