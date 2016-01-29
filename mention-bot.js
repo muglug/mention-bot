@@ -179,11 +179,12 @@ async function getBlame(path: string): Promise<string> {
   return new Promise(function(resolve, reject) {
     var cmd = 'git';
     require('child_process')
-      .execFile(cmd, ['blame', '-p', path], {cwd: process.env.GITHUB_DIR, encoding: 'utf8', maxBuffer: 1000 * 1024}, function(error, stdout, stderr) {
+      .execFile(cmd, ['blame', '-p', path], {cwd: process.env.GITHUB_DIR, encoding: 'utf8', maxBuffer: 50000 * 1024}, function(error, stdout, stderr) {
         if (error) {
           reject(error);
         } else {
-          resolve(stdout.toString().split('\n').map(function(line) {
+          var output = stdout.toString();
+          resolve(output.split('\n').map(function(line) {
             return line.replace(/^[0-9a-f]{8} \(<([^>]*)>.*$/, '$1');
           }));
         }
