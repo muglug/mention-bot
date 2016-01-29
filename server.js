@@ -55,10 +55,10 @@ if (!process.env.GITHUB_USER) {
 
 var github = new GitHubApi({
   version: '3.0.0',
-  host: config.gheHost,
-  pathPrefix: config.ghePathPrefix,
-  protocol: config.gheProtocol || 'https',
-  port: config.ghePort || '443'
+  host: config.ghe.host,
+  pathPrefix: config.ghe.pathPrefix,
+  protocol: config.ghe.protocol || 'https',
+  port: config.ghe.port || '443'
 });
 
 github.authenticate({
@@ -154,6 +154,22 @@ async function work(body) {
   if (repoConfig.userBlacklistForPR.indexOf(data.pull_request.user.login) >= 0) {
     console.log('Skipping because blacklisted user created Pull Request.');
     return;
+  }
+
+  if (config.triggers) {
+    var found = false;
+    var prTokenizedBody = data.pull_request.body.toLowerCase().split(/[\n\s]+/);
+
+    for (var i = 0; i < config.triggers.length; i++) {
+      if (prTokenizedBody.includes(config.triggers[i].toLowerCase())) {
+        found = true;
+      }
+    }
+
+    if (!found) {
+      console.log('Skipping because no trigger words found.');
+      return;
+    }
   }
 
   var reviewers = await mentionBot.guessOwnersForPullRequest(

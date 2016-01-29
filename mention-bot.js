@@ -12,6 +12,7 @@
 'use strict';
 
 var githubAuthCookies = require('./githubAuthCookies');
+var config = require('./package.json').config;
 var fs = require('fs');
 var minimatch = require('minimatch');
 
@@ -157,8 +158,6 @@ function parseBlame(lines: Array<string>): Array<string> {
   var lineNumber = 1;
   var author;
   var authors = [];
-
-  console.log(lines);
   
   lines.forEach(function(line) {
     if (line.substring(0, 11) === 'author-mail') {
@@ -323,7 +322,7 @@ async function getOwnerOrgs(
 
 async function filterRequiredOrgs(
   owners: Array<string>,
-  config: Object,
+  repoConfig: Object,
   github: Object
 ): Promise<Array<string>> {
   var promises = owners.map(function(owner) {
@@ -333,7 +332,7 @@ async function filterRequiredOrgs(
   var userOrgs = await Promise.all(promises);
   return owners.filter(function(owner, index) {
     // user passes if he is in any of the required organizations
-    return config.requiredOrgs.some(function(reqOrg) {
+    return repoConfig.requiredOrgs.some(function(reqOrg) {
       return userOrgs[index].indexOf(reqOrg) >= 0;
     });
   });
@@ -341,15 +340,15 @@ async function filterRequiredOrgs(
 
 async function replaceEmailWithUser(
   email: string,
-  config: Object,
-  github: Object
+  github: Object,
+  config: Object
 ): Promise<string> {
   return new Promise(function(resolve, reject) {
     if (config.emailAliases && config.emailAliases[email]) {
       resolve(config.emailAliases[email]);
 
-    } else if (config.gheEmailDomain && email.indexOf('@' + config.gheEmailDomain) > -1) {
-      resolve(email.replace('@' + config.gheEmailDomain, ''));
+    } else if (config.ghe.emailDomain && email.indexOf('@' + config.ghe.emailDomain) > -1) {
+      resolve(email.replace('@' + config.ghe.emailDomain, ''));
 
     } else if (email.indexOf('@') > -1) {
       github.search.email({'email': email}, function(error, result) {
@@ -398,7 +397,7 @@ async function guessOwners(
   blames: { [key: string]: Array<string> },
   creator: string,
   defaultOwners: Array<string>,
-  config: Object,
+  repoConfig: Object,
   github: Object
 ): Promise<Array<string>> {
   var deletedOwners = getDeletedOwners(files, blames);
@@ -423,21 +422,21 @@ async function guessOwners(
       return owner !== creator;
     })
     .filter(function(owner) {
-      return config.userBlacklist.indexOf(owner) === -1;
+      return repoConfig.userBlacklist.indexOf(owner) === -1;
     });
 
-  if (config.requiredOrgs.length > 0) {
-    owners = await filterRequiredOrgs(owners, config, github);
+  if (repoConfig.requiredOrgs.length > 0) {
+    owners = await filterRequiredOrgs(owners, repoConfig, github);
   }
 
   var promises = owners.map(function(owner) {
-    return replaceEmailWithUser(owner, github);
+    return replaceEmailWithUser(owner, github, config);
   });
 
   owners = await Promise.all(promises);
 
   return owners
-    .slice(0, config.maxReviewers)
+    .slice(0, repoConfig.maxReviewers)
     .concat(defaultOwners)
     .filter(function(owner, index, ownersFound) {
       return ownersFound.indexOf(owner) === index;
@@ -447,27 +446,15 @@ async function guessOwners(
 async function getDiff(
   repoURI: string,
   id: int,
-  github: Object
+  config: Object
 ) : Promise<Array<string>> {
-  return new Promise(function(resolve, reject) {
-    github.pullRequests.getFiles(
-      {
-        'headers': [
-          'Accept: application/vnd.github.v3.diff'
-        ],
-        'user': repoURI.split('/')[0],
-        'repo': repoURI.split('/')[1],
-        'number': id
-      },
-      function(err, result) {
-        if (err) {
-          reject(err);
-        } else {
-          resolve(result.patch);
-        }
-      }
-    );
-  });
+  var apiUrl = (config.ghe.protocol || 'https') + '://' + (config.ghe.host || 'api.github.com') + (config.ghe.pathPrefix || '') + '/';
+  var pullUrl = apiUrl + 'repos/' + repoURI + '/pulls/' + id;
+  
+  return fetch(pullUrl, [
+    'Accept: application/vnd.github.v3.diff',
+    'Authorization: token ' + process.env.GITHUB_TOKEN
+  ]);
 }
 
 async function guessOwnersForPullRequest(
@@ -475,17 +462,14 @@ async function guessOwnersForPullRequest(
   id: number,
   creator: string,
   targetBranch: string,
-  config: Object,
+  repoConfig: Object,
   github: Object
 ): Promise<Array<string>> {
-  var diff = await fetch((config.gheProtocol || 'https') + config.gheHost + '/api/v3/repos/' + repoURI + '/pulls/' + id, [
-    'Accept: application/vnd.github.v3.diff',
-    'Authorization: token ' + process.env.GITHUB_TOKEN
-  ]);
+  var diff = await getDiff(repoURI, id, config);
   var files = parseDiff(diff);
-  var defaultOwners = getDefaultOwners(files, config.alwaysNotifyForPaths);
+  var defaultOwners = getDefaultOwners(files, repoConfig.alwaysNotifyForPaths);
 
-  if (!config.findPotentialReviewers) {
+  if (!repoConfig.findPotentialReviewers) {
       return defaultOwners;
   }
 
@@ -500,12 +484,12 @@ async function guessOwnersForPullRequest(
     return countA > countB ? -1 : (countA < countB ? 1 : 0);
   });
   // remove files that match any of the globs in the file blacklist config
-  config.fileBlacklist.forEach(function(glob) {
+  repoConfig.fileBlacklist.forEach(function(glob) {
     files = files.filter(function(file) {
       return !minimatch(file.path, glob);
     });
   });
-  files = files.slice(0, config.numFilesToCheck);
+  files = files.slice(0, repoConfig.numFilesToCheck);
 
   var blames = {};
   // create blame promises (allows concurrent loading)
@@ -521,7 +505,7 @@ async function guessOwnersForPullRequest(
 
   // This is the line that implements the actual algorithm, all the lines
   // before are there to fetch and extract the data needed.
-  return guessOwners(files, blames, creator, defaultOwners, config, github);
+  return guessOwners(files, blames, creator, defaultOwners, repoConfig, github);
 }
 
 module.exports = {
