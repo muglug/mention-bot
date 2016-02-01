@@ -367,6 +367,32 @@ async function replaceEmailWithUser(
   });
 }
 
+async function blankIfDead(
+  user: string,
+  github: Object
+): Promise<string> {
+  return new Promise(function(resolve, reject) {
+    if (user.indexOf('@') === -1) {
+      github.user.get({user: user}, function(error, result) {
+        if (error) {
+          resolve(user);
+        }
+        else {
+          if (result.suspended_at === null) {
+            resolve(user);
+          }
+          else {
+            resolve('');
+          }
+        }
+      });
+    }
+    else {
+      resolve(user);
+    }
+  });
+}
+
 /**
  * The problem at hand is to find a set of three best effort people that have
  * context on a pull request. It doesn't (and actually can't) be perfect.
@@ -430,11 +456,23 @@ async function guessOwners(
     owners = await filterRequiredOrgs(owners, repoConfig, github);
   }
 
-  var promises = owners.map(function(owner) {
+  var replacePromises = owners.map(function(owner) {
     return replaceEmailWithUser(owner, github, config);
   });
 
-  owners = await Promise.all(promises);
+  owners = await Promise.all(replacePromises);
+
+  owners = [...new Set(owners)];
+
+  var currentPromises = owners.map(function(owner) {
+    return blankIfDead(owner, github);
+  });
+
+  owners = await Promise.all(currentPromises);
+
+  owners = owners.filter(function(owner) {
+    return owner !== '';
+  });
 
   return owners
     .slice(0, repoConfig.maxReviewers)

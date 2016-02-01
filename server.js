@@ -111,7 +111,7 @@ async function work(body) {
 
   // default config
   var repoConfig = {
-    maxReviewers: 3,
+    maxReviewers: 5,
     numFilesToCheck: 5,
     userBlacklist: [],
     userBlacklistForPR: [],
@@ -138,11 +138,32 @@ async function work(body) {
     console.error(e);
   }
 
-  if (repoConfig.actions.indexOf(data.action) === -1) {
-    console.log(
-      'Skipping because action is ' + data.action + '.',
-      'We only care about: "' + repoConfig.actions.join("', '") + '"'
-    );
+  var pullRequest;
+  var creator;
+  var messageBody;
+  var pullRequestNumber;
+
+  if (data.issue && data.issue.pull_request && data.comment && data.action === 'created') {
+    pullRequest = data.issue.pull_request;
+    creator = data.comment.user;
+    pullRequestNumber = data.issue.number;
+    messageBody = data.comment.body;
+  }
+  else if (data.pull_request) {
+    if (repoConfig.actions.indexOf(data.action) === -1) {
+      console.log(
+        'Skipping because action is ' + data.action + '.',
+        'We only care about: "' + repoConfig.actions.join("', '") + '"'
+      );
+      return;
+    }
+
+    pullRequest = data.pull_request;
+    creator = pullRequest.user;
+    messageBody = data.pull_request.body;
+  }
+  else {
+    console.log('Skipping because not a pull request or PR comment');
     return;
   }
 
@@ -150,17 +171,17 @@ async function work(body) {
     repoConfig.requiredOrgs.push(process.env.REQUIRED_ORG);
   }
 
-  if (repoConfig.userBlacklistForPR.indexOf(data.pull_request.user.login) >= 0) {
+  if (repoConfig.userBlacklistForPR.indexOf(creator.login) >= 0) {
     console.log('Skipping because blacklisted user created Pull Request.');
     return;
   }
 
   if (config.triggers) {
     var found = false;
-    var prTokenizedBody = data.pull_request.body.toLowerCase().split(/[\n\s]+/);
+    var tokenizedBody = messageBody.toLowerCase().split(/[\n\s]+/);
 
     for (var i = 0; i < config.triggers.length; i++) {
-      if (prTokenizedBody.includes(config.triggers[i].toLowerCase())) {
+      if (tokenizedBody.includes(config.triggers[i].toLowerCase())) {
         found = true;
       }
     }
@@ -173,14 +194,14 @@ async function work(body) {
 
   var reviewers = await mentionBot.guessOwnersForPullRequest(
     data.repository.html_url.split('/').slice(3).join('/'), // 'fbsamples/bot-testing'
-    data.pull_request.number, // 23
-    data.pull_request.user.login, // 'mention-bot'
-    data.pull_request.base.ref, // 'master'
+    pullRequestNumber, // 23
+    creator.login, // 'mention-bot'
+    pullRequest.base ? pullRequest.base.ref : 'master', // 'master'
     repoConfig,
     github
   );
 
-  console.log(data.pull_request.html_url, reviewers);
+  console.log(pullRequest.html_url, reviewers);
 
   if (reviewers.length === 0) {
     console.log('Skipping because there are no reviewers found.');
@@ -190,7 +211,7 @@ async function work(body) {
   github.issues.createComment({
     user: data.repository.owner.login, // 'fbsamples'
     repo: data.repository.name, // 'bot-testing'
-    number: data.pull_request.number, // 23
+    number: pullRequestNumber, // 23
     body: messageGenerator(
       reviewers,
       buildMentionSentence,
