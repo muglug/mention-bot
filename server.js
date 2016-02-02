@@ -164,6 +164,12 @@ async function work(body) {
   }
   else {
     console.log('Skipping because not a pull request or PR comment');
+    console.log(data);
+    return;
+  }
+
+  if (messageBody.indexOf('git blame') > -1) {
+    console.log('Skipping because it is a mention-bot comment');
     return;
   }
 
@@ -188,6 +194,7 @@ async function work(body) {
 
     if (!found) {
       console.log('Skipping because no trigger words found.');
+      console.log(data);
       return;
     }
   }
