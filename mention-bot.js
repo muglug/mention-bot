@@ -187,11 +187,11 @@ async function getBlame(path: string): Promise<string> {
     require('child_process')
       .execFile(cmd, ['blame', '-p', path], {cwd: process.env.GITHUB_DIR, encoding: 'utf8', maxBuffer: 50000 * 1024}, function(error, stdout, stderr) {
         if (error) {
-          console.error('Error running that command');
+          console.error('Error running git blame -p ' + path);
           reject(error);
         } else {
           var output = stdout.toString();
-          console.log('git blame ran successfully');
+          console.log('got blame for ' + path);
           resolve(output.split('\n').map(function(line) {
             return line.replace(/^[0-9a-f]{8} \(<([^>]*)>.*$/, '$1');
           }));
