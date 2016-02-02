@@ -182,13 +182,16 @@ async function getBlame(path: string): Promise<string> {
   console.log('Getting blame for ' + path);
 
   return new Promise(function(resolve, reject) {
+    console.log('Attempting to run git blame -p ' + path + ' in directory ' + process.env.GITHUB_DIR);
     var cmd = 'git';
     require('child_process')
       .execFile(cmd, ['blame', '-p', path], {cwd: process.env.GITHUB_DIR, encoding: 'utf8', maxBuffer: 50000 * 1024}, function(error, stdout, stderr) {
         if (error) {
+          console.error('Error running that command');
           reject(error);
         } else {
           var output = stdout.toString();
+          console.log('git blame ran successfully');
           resolve(output.split('\n').map(function(line) {
             return line.replace(/^[0-9a-f]{8} \(<([^>]*)>.*$/, '$1');
           }));
@@ -560,10 +563,11 @@ async function guessOwnersForPullRequest(
     return getBlame(file.path);
   });
 
-  console.log('Parsing blames');
-
   // wait for all promises to resolve
   var results = await Promise.all(promises);
+
+  console.log('Parsing blames');
+
   results.forEach(function(result, index) {
     blames[files[index].path] = parseBlame(result);
   });
