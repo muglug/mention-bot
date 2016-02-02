@@ -462,7 +462,9 @@ async function guessOwners(
 
   owners = await Promise.all(replacePromises);
 
-  owners = [...new Set(owners)];
+  owners = owners.filter(function(owner, index, ownersFound) {
+    return ownersFound.indexOf(owner) === index;
+  });
 
   var currentPromises = owners.map(function(owner) {
     return blankIfDead(owner, github);
