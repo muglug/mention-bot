@@ -163,6 +163,7 @@ async function work(body) {
     }
 
     pullRequest = data.pull_request;
+    pullRequestNumber = data.pull_request.number;
     creator = pullRequest.user;
     messageBody = data.pull_request.body;
   }
