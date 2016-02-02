@@ -67,6 +67,7 @@ function startsWith(str, start) {
 }
 
 function parseDiffFile(lines: Array<string>): FileInfo {
+  console.log('Parsing diff file');
   var deletedLines = [];
 
   // diff --git a/path b/path
@@ -135,6 +136,7 @@ function parseDiffFile(lines: Array<string>): FileInfo {
 }
 
 function parseDiff(diff: string): Array<FileInfo> {
+  console.log('Parsing diff');
   var files = [];
   // The algorithm is designed to be best effort. If the http request failed
   // for some reason and we get an empty file, we should not crash.
@@ -155,6 +157,7 @@ function parseDiff(diff: string): Array<FileInfo> {
 }
 
 function parseBlame(lines: Array<string>): Array<string> {
+  console.log('Parsing blame');
   var lineNumber = 1;
   var author;
   var authors = [];
@@ -176,6 +179,8 @@ function parseBlame(lines: Array<string>): Array<string> {
 }
 
 async function getBlame(path: string): Promise<string> {
+  console.log('Getting blame for ' + path);
+
   return new Promise(function(resolve, reject) {
     var cmd = 'git';
     require('child_process')
@@ -256,6 +261,7 @@ function getDefaultOwners(
   files: Array<FileInfo>,
   whitelist: Array<WhitelistUser>
 ): Array<string> {
+  console.log('Getting default owners');
   var owners = [];
   var users = whitelist || [];
 
@@ -431,6 +437,8 @@ async function guessOwners(
   repoConfig: Object,
   github: Object
 ): Promise<Array<string>> {
+  console.log('guessing owners');
+
   var deletedOwners = getDeletedOwners(files, blames);
   var allOwners = getAllOwners(files, blames);
 
@@ -460,6 +468,8 @@ async function guessOwners(
     owners = await filterRequiredOrgs(owners, repoConfig, github);
   }
 
+  console.log('Filtering out users by email');
+
   var replacePromises = owners.map(function(owner) {
     return replaceEmailWithUser(owner, github, config);
   });
@@ -470,6 +480,8 @@ async function guessOwners(
     return ownersFound.indexOf(owner) === index;
   });
 
+  console.log('Filtering out users if they have left');
+
   var currentPromises = owners.map(function(owner) {
     return blankIfDead(owner, github);
   });
@@ -479,6 +491,8 @@ async function guessOwners(
   owners = owners.filter(function(owner) {
     return owner !== '';
   });
+
+  console.log('Returning owners');
 
   return owners
     .slice(0, repoConfig.maxReviewers)
@@ -493,6 +507,7 @@ async function getDiff(
   id: int,
   config: Object
 ) : Promise<Array<string>> {
+  console.log('Getting diff');
   var apiUrl = (config.ghe.protocol || 'https') + '://' + (config.ghe.host || 'api.github.com') + (config.ghe.pathPrefix || '') + '/';
   var pullUrl = apiUrl + 'repos/' + repoURI + '/pulls/' + id;
   
@@ -510,6 +525,7 @@ async function guessOwnersForPullRequest(
   repoConfig: Object,
   github: Object
 ): Promise<Array<string>> {
+  console.log('guessing owners for PR');
   var diff = await getDiff(repoURI, id, config);
   var files = parseDiff(diff);
   var defaultOwners = getDefaultOwners(files, repoConfig.alwaysNotifyForPaths);
@@ -536,11 +552,15 @@ async function guessOwnersForPullRequest(
   });
   files = files.slice(0, repoConfig.numFilesToCheck);
 
+  console.log('Getting blames');
+
   var blames = {};
   // create blame promises (allows concurrent loading)
   var promises = files.map(function(file) {
     return getBlame(file.path);
   });
+
+  console.log('Parsing blames');
 
   // wait for all promises to resolve
   var results = await Promise.all(promises);

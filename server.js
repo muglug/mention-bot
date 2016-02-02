@@ -53,6 +53,8 @@ if (!process.env.GITHUB_USER) {
   );
 }
 
+console.log(process.versions);
+
 var github = new GitHubApi({
   version: '3.0.0',
   host: config.ghe.host,
@@ -203,6 +205,8 @@ async function work(body) {
       return;
     }
   }
+
+  console.log('this is an acceptable PR/comment');
 
   var reviewers = await mentionBot.guessOwnersForPullRequest(
     data.repository.html_url.split('/').slice(3).join('/'), // 'fbsamples/bot-testing'
