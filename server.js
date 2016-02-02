@@ -102,6 +102,8 @@ function getRepoConfig(request) {
 }
 
 async function work(body) {
+  console.log('received data');
+
   var data = {};
   try {
     data = JSON.parse(body.toString());
@@ -135,7 +137,7 @@ async function work(body) {
 
     repoConfig = {...repoConfig, ...JSON.parse(configRes)};
   } catch (e) {
-    console.error(e);
+    console.log('Could not locate file ' + CONFIG_PATH + ' in repository ' + data.repository.name);
   }
 
   var pullRequest;
@@ -161,6 +163,10 @@ async function work(body) {
     pullRequest = data.pull_request;
     creator = pullRequest.user;
     messageBody = data.pull_request.body;
+  }
+  else if (data.issue && data.issue.pull_request === undefined && data.comment) {
+    console.log('Skipping because it is an issue comment');
+    return;
   }
   else {
     console.log('Skipping because not a pull request or PR comment');
@@ -194,7 +200,6 @@ async function work(body) {
 
     if (!found) {
       console.log('Skipping because no trigger words found.');
-      console.log(data);
       return;
     }
   }

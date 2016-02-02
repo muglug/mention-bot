@@ -370,27 +370,31 @@ async function replaceEmailWithUser(
 async function blankIfDead(
   user: string,
   github: Object
-): Promise<string> {
-  return new Promise(function(resolve, reject) {
-    if (user.indexOf('@') === -1) {
-      github.user.get({user: user}, function(error, result) {
-        if (error) {
-          resolve(user);
-        }
-        else {
-          if (result.suspended_at === null) {
-            resolve(user);
-          }
-          else {
-            resolve('');
-          }
-        }
-      });
+): string {
+  if (user.indexOf('@') === -1) {
+    var apiUrl = (config.ghe.protocol || 'https') + '://' + (config.ghe.host || 'api.github.com') + (config.ghe.pathPrefix || '') + '/';
+    var userUrl = apiUrl + 'users/' + user;
+    
+    var userJson = await fetch(userUrl, [
+      'Authorization: token ' + process.env.GITHUB_TOKEN
+    ]);
+
+    if (!userJson) {
+      return '';
+    }
+
+    var userObject = JSON.parse(userJson);
+
+    if (userObject.suspended_at === null) {
+      return user;
     }
     else {
-      resolve(user);
+      return '';
     }
-  });
+  }
+  else {
+    return user;
+  }
 }
 
 /**
